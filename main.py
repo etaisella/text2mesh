@@ -67,7 +67,10 @@ def run_branched(args):
     mesh = Mesh(args.obj_path)
     MeshNormalizer(mesh)()
 
-    prior_color = torch.full(size=(mesh.faces.shape[0], 3, 3), fill_value=0.5, device=device)
+    if args.tetra:
+        prior_color = torch.full(size=(mesh.faces.shape[0], 4, 3), fill_value=0.5, device=device)
+    else:
+        prior_color = torch.full(size=(mesh.faces.shape[0], 3, 3), fill_value=0.5, device=device)
 
     background = None
     if args.background is not None:
@@ -399,25 +402,30 @@ def save_rendered_results(args, dir, final_color, mesh):
     # Vertex colorings
     mesh.face_attributes = kaolin.ops.mesh.index_vertices_by_faces(final_color.unsqueeze(0).to(device),
                                                                    mesh.faces.to(device))
-    img, mask = kal_render.render_single_view(mesh, args.frontview_center[1], args.frontview_center[0],
-                                              radius=2.5,
-                                              background=torch.tensor([1, 1, 1]).to(device).float(),
-                                              return_mask=True)
-    img = img[0].cpu()
-    mask = mask[0].cpu()
-    # Manually add alpha channel using background color
-    alpha = torch.ones(img.shape[1], img.shape[2])
-    alpha[torch.where(mask == 0)] = 0
-    img = torch.cat((img, alpha.unsqueeze(0)), dim=0)
-    img = transforms.ToPILImage()(img)
-    img.save(os.path.join(dir, f"final_cluster.png"))
+    num_ims = 18
+    azims = torch.linspace(0, 2 * np.pi, num_ims + 1)[:-1]
+    for i in range(num_ims):
+        azim = azims[i]
+        img, mask = kal_render.render_single_view(mesh, args.frontview_center[1], azim,
+                                                  radius=2.5,
+                                                  background=torch.tensor([1, 1, 1]).to(device).float(),
+                                                  return_mask=True)
+        img = img[0].cpu()
+        mask = mask[0].cpu()
+        # Manually add alpha channel using background color
+        alpha = torch.ones(img.shape[1], img.shape[2])
+        alpha[torch.where(mask == 0)] = 0
+        img = torch.cat((img, alpha.unsqueeze(0)), dim=0)
+        img = transforms.ToPILImage()(img)
+        img.save(os.path.join(dir, f"final_cluster_{i}.png"))
 
 
 def update_mesh(mlp, network_input, prior_color, sampled_mesh, vertices):
     pred_rgb, pred_normal = mlp(network_input)
-    sampled_mesh.face_attributes = prior_color + kaolin.ops.mesh.index_vertices_by_faces(
+    idx_vert_by_faces = kaolin.ops.mesh.index_vertices_by_faces(
         pred_rgb.unsqueeze(0),
         sampled_mesh.faces)
+    sampled_mesh.face_attributes = prior_color + idx_vert_by_faces
     sampled_mesh.vertices = vertices + sampled_mesh.vertex_normals * pred_normal
     MeshNormalizer(sampled_mesh)()
 
@@ -464,7 +472,7 @@ if __name__ == '__main__':
 
     # Training settings 
     parser.add_argument('--frontview_std', type=float, default=8)
-    parser.add_argument('--frontview_center', nargs=2, type=float, default=[0., 0.])
+    parser.add_argument('--frontview_center', nargs=2, type=float, default=[5.4, 0.4])
     parser.add_argument('--clipavg', type=str, default=None)
     parser.add_argument('--geoloss', action="store_true")
     parser.add_argument('--samplebary', action="store_true")
@@ -493,6 +501,7 @@ if __name__ == '__main__':
     # CLIP model settings 
     parser.add_argument('--clipmodel', type=str, default='ViT-B/32')
     parser.add_argument('--jit', action="store_true")
+    parser.add_argument('--tetra', action="store_true")
     
     args = parser.parse_args()
 

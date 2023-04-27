@@ -95,6 +95,7 @@ class Renderer():
                            return_mask=False):
         # if mesh is None:
         #     mesh = self._current_mesh
+        print(azim)
         verts = mesh.vertices
         faces = mesh.faces
         n_faces = faces.shape[0]

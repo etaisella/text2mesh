@@ -1,4 +1,6 @@
+import kaolin
 import kaolin as kal
+import trimesh
 import torch
 import utils
 from utils import device
@@ -9,7 +11,7 @@ import PIL
 class Mesh():
     def __init__(self,obj_path,color=torch.tensor([0.0,0.0,1.0])):
         if ".obj" in obj_path:
-            mesh = kal.io.obj.import_mesh(obj_path, with_normals=True)
+            mesh = kal.io.obj.import_mesh(obj_path, with_normals=True, heterogeneous_mesh_handler=kaolin.io.utils.heterogeneous_mesh_handler_naive_homogenize)
         elif ".off" in obj_path:
             mesh = kal.io.off.import_mesh(obj_path)
         else:
@@ -26,7 +28,12 @@ class Mesh():
             #     face_uvs_idx = mesh.face_uvs_idx.to(device)
             #     self.face_uvs = kal.ops.mesh.index_vertices_by_faces(uvs, face_uvs_idx).detach()
             if mesh.vertex_normals is not None:
-                self.vertex_normals = mesh.vertex_normals.to(device).float()
+                #self.vertex_normals = mesh.vertex_normals.to(device).float()
+                vertex_count = self.vertices.shape[0]
+                normals = trimesh.geometry.mean_vertex_normals(vertex_count, 
+                                                               self.faces.cpu(), 
+                                                               mesh.face_normals.cpu())
+                self.vertex_normals = torch.tensor(normals).to(device).float()
 
                 # Normalize
                 self.vertex_normals = torch.nn.functional.normalize(self.vertex_normals)
